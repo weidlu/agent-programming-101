@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Log Viewer</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+            background: #1a1a2e;
+            color: #eaeaea;
+            min-height: 100vh;
+        }
+        
+        /* Header */
+        .header {
+            background: #16213e;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            border-bottom: 1px solid #0f3460;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+        
+        .header h1 {
+            font-size: 16px;
+            color: #00ff88;
+            font-weight: 600;
+        }
+        
+        .btn {
+            padding: 6px 14px;
+            border: none;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary { background: #00ff88; color: #1a1a2e; }
+        .btn-primary:hover { background: #00cc6a; }
+        .btn-secondary { background: #2a2a4a; color: #eaeaea; border: 1px solid #3a3a5a; }
+        .btn-secondary:hover { background: #3a3a5a; }
+        
+        .filter-input {
+            background: #2a2a4a;
+            border: 1px solid #3a3a5a;
+            color: #eaeaea;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            width: 200px;
+            font-family: inherit;
+        }
+        
+        .filter-input:focus { outline: none; border-color: #00ff88; }
+        
+        .stats {
+            margin-left: auto;
+            font-size: 12px;
+            color: #888;
+        }
+        
+        /* Main layout */
+        .main {
+            display: flex;
+            height: calc(100vh - 50px);
+        }
+        
+        /* Input panel */
+        .input-panel {
+            width: 100%;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .input-panel.hidden { display: none; }
+        
+        .log-input {
+            flex: 1;
+            background: #0d0d1a;
+            border: 1px solid #2a2a4a;
+            color: #eaeaea;
+            padding: 12px;
+            font-family: inherit;
+            font-size: 12px;
+            resize: none;
+            border-radius: 4px;
+        }
+        
+        .log-input:focus { outline: none; border-color: #00ff88; }
+        
+        /* Log panel */
+        .log-panel {
+            width: 100%;
+            display: none;
+            flex-direction: column;
+        }
+        
+        .log-panel.active { display: flex; }
+        
+        /* Log entries */
+        .log-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        
+        .log-entry {
+            display: flex;
+            padding: 4px 8px;
+            border-radius: 3px;
+            margin-bottom: 2px;
+            font-size: 12px;
+            line-height: 1.5;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+        
+        .log-entry:hover { background: #2a2a4a; }
+        .log-entry.selected { background: #1e3a5f; }
+        
+        .log-num {
+            color: #666;
+            width: 40px;
+            flex-shrink: 0;
+            user-select: none;
+        }
+        
+        .log-time {
+            color: #888;
+            width: 90px;
+            flex-shrink: 0;
+        }
+        
+        .log-level {
+            width: 60px;
+            flex-shrink: 0;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .log-level.debug { color: #888; }
+        .log-level.info { color: #00aaff; }
+        .log-level.warn { color: #ffaa00; }
+        .log-level.error { color: #ff4444; }
+        .log-level.user { color: #ff88ff; }
+        .log-level.agent { color: #00ff88; }
+        .log-level.sys { color: #ffff00; }
+        
+        .log-content {
+            flex: 1;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+        
+        .log-content .json-preview {
+            color: #888;
+            font-style: italic;
+        }
+        
+        /* Detail panel */
+        .detail-panel {
+            width: 50%;
+            background: #0d0d1a;
+            border-left: 1px solid #2a2a4a;
+            display: none;
+            flex-direction: column;
+        }
+        
+        .detail-panel.active {
+            display: flex;
+        }
+        
+        .detail-header {
+            padding: 12px;
+            background: #16213e;
+            border-bottom: 1px solid #2a2a4a;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .detail-header h3 {
+            font-size: 14px;
+            color: #00ff88;
+        }
+        
+        .detail-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+        }
+        
+        .detail-raw {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 4px;
+            padding: 12px;
+            margin-bottom: 12px;
+            font-size: 12px;
+            word-break: break-all;
+            white-space: pre-wrap;
+        }
+        
+        .detail-formatted {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4a;
+            border-radius: 4px;
+            padding: 12px;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+        
+        .section-title {
+            color: #888;
+            font-size: 11px;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+            letter-spacing: 1px;
+        }
+        
+        /* JSON highlighting */
+        .json-key { color: #ff6b6b; }
+        .json-string { color: #98c379; }
+        .json-number { color: #d19a66; }
+        .json-boolean { color: #56b6c2; }
+        .json-null { color: #888; }
+        
+        /* Filter highlight */
+        .highlight { background: #665500; color: #fff; }
+        
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #1a1a2e; }
+        ::-webkit-scrollbar-thumb { background: #3a3a5a; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #4a4a6a; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>📋 Simple Log Viewer</h1>
+        <button class="btn btn-primary" id="parseBtn" onclick="parseLogs()">解析</button>
+        <button class="btn btn-secondary" onclick="loadSample()">示例</button>
+        <button class="btn btn-secondary" onclick="reset()">重置</button>
+        <input type="text" class="filter-input" id="filterInput" placeholder="过滤日志..." oninput="filterLogs()">
+        <select class="filter-input" id="levelFilter" onchange="filterLogs()" style="width:100px">
+            <option value="">全部级别</option>
+            <option value="debug">DEBUG</option>
+            <option value="info">INFO</option>
+            <option value="user">USER</option>
+            <option value="agent">AGENT</option>
+            <option value="sys">系统</option>
+        </select>
+        <div class="stats" id="stats"></div>
+    </div>
+    
+    <div class="main">
+        <div class="input-panel" id="inputPanel">
+            <textarea class="log-input" id="logInput" placeholder="粘贴日志到这里，然后点击'解析'按钮...
+
+支持的格式：
+- OpenAI SDK Debug 日志
+- 普通文本日志
+- 任何带时间戳的日志
+
+快捷键：Ctrl+Enter 解析"></textarea>
+        </div>
+        
+        <div class="log-panel" id="logPanel">
+            <div class="log-container" id="logContainer"></div>
+        </div>
+        
+        <div class="detail-panel" id="detailPanel">
+            <div class="detail-header">
+                <h3>📄 日志详情</h3>
+                <button class="btn btn-secondary" onclick="closeDetail()">✕ 关闭</button>
+            </div>
+            <div class="detail-content" id="detailContent"></div>
+        </div>
+    </div>
+
+    <script>
+        let allLogs = [];
+        let filteredLogs = [];
+        let selectedIndex = -1;
+        
+        function parseLogs() {
+            const input = document.getElementById('logInput').value.trim();
+            if (!input) return;
+            
+            allLogs = [];
+            const lines = input.split('\n');
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                if (!line.trim()) continue;
+                
+                const parsed = parseLine(line, i + 1);
+                allLogs.push(parsed);
+            }
+            
+            filteredLogs = [...allLogs];
+            document.getElementById('inputPanel').classList.add('hidden');
+            document.getElementById('logPanel').classList.add('active');
+            renderLogs();
+            updateStats();
+        }
+        
+        function parseLine(line, lineNum) {
+            let time = '';
+            let level = 'info';
+            let content = line;
+            let jsonData = null;
+            
+            // 提取时间戳 [2026-02-06 16:16:21 ...]
+            const timeMatch = line.match(/\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/);
+            if (timeMatch) {
+                time = timeMatch[1].split(' ')[1]; // 只取时间部分
+            }
+            
+            // 判断日志级别
+            if (line.includes('- DEBUG]') || line.includes('[DEBUG]')) {
+                level = 'debug';
+            } else if (line.includes('- INFO]') || line.includes('[INFO]')) {
+                level = 'info';
+            } else if (line.includes('- WARN') || line.includes('[WARN]')) {
+                level = 'warn';
+            } else if (line.includes('- ERROR') || line.includes('[ERROR]')) {
+                level = 'error';
+            } else if (line.startsWith('用户:') || line.startsWith('User:')) {
+                level = 'user';
+                time = '';
+            } else if (line.startsWith('Agent:')) {
+                level = 'agent';
+                time = '';
+            } else if (line.includes('[系统日志]')) {
+                level = 'sys';
+            }
+            
+            // 检测 JSON 数据
+            const jsonPatterns = [
+                /'json_data':\s*(\{.+)/,
+                /ChatCompletion\((.+)\)/,
+                /CompletionUsage\((.+)\)/,
+                /ChatCompletionMessage\((.+)\)/
+            ];
+            
+            for (const pattern of jsonPatterns) {
+                const match = line.match(pattern);
+                if (match) {
+                    jsonData = match[1];
+                    break;
+                }
+            }
+            
+            // 简化内容显示
+            let displayContent = content;
+            if (displayContent.length > 150) {
+                displayContent = displayContent.substring(0, 150) + '...';
+            }
+            
+            return {
+                lineNum,
+                time,
+                level,
+                content: line,
+                displayContent,
+                jsonData,
+                hasJson: jsonData !== null
+            };
+        }
+        
+        function renderLogs() {
+            const container = document.getElementById('logContainer');
+            const filter = document.getElementById('filterInput').value.toLowerCase();
+            
+            container.innerHTML = filteredLogs.map((log, index) => {
+                let content = escapeHtml(log.displayContent);
+                
+                // 高亮过滤关键词
+                if (filter) {
+                    const regex = new RegExp(`(${escapeRegex(filter)})`, 'gi');
+                    content = content.replace(regex, '<span class="highlight">$1</span>');
+                }
+                
+                // 如果有 JSON，添加指示器
+                if (log.hasJson) {
+                    content += ' <span class="json-preview">[JSON]</span>';
+                }
+                
+                return `
+                    <div class="log-entry ${selectedIndex === index ? 'selected' : ''}" 
+                         onclick="selectLog(${index})" 
+                         ondblclick="selectLog(${index}); showDetail()">
+                        <span class="log-num">${log.lineNum}</span>
+                        <span class="log-time">${log.time}</span>
+                        <span class="log-level ${log.level}">${log.level}</span>
+                        <span class="log-content">${content}</span>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function selectLog(index) {
+            selectedIndex = index;
+            renderLogs();
+            showDetail();
+        }
+        
+        function showDetail() {
+            if (selectedIndex < 0 || selectedIndex >= filteredLogs.length) return;
+            
+            const log = filteredLogs[selectedIndex];
+            const panel = document.getElementById('detailPanel');
+            const content = document.getElementById('detailContent');
+            
+            panel.classList.add('active');
+            document.getElementById('logPanel').style.width = '50%';
+            
+            let html = `
+                <div class="section-title">原始内容</div>
+                <div class="detail-raw">${escapeHtml(log.content)}</div>
+            `;
+            
+            // 尝试格式化 JSON
+            if (log.hasJson) {
+                const formatted = formatLogContent(log.content);
+                html += `
+                    <div class="section-title">格式化视图</div>
+                    <div class="detail-formatted">${formatted}</div>
+                `;
+            }
+            
+            content.innerHTML = html;
+        }
+        
+        function formatLogContent(content) {
+            // 尝试提取和格式化各种结构
+            let result = '';
+            
+            // Request options - json_data
+            if (content.includes("'json_data':")) {
+                const match = content.match(/'json_data':\s*(\{.+)/);
+                if (match) {
+                    result += '<strong style="color:#00ff88">📤 Request Data</strong>\n\n';
+                    result += formatPythonDict(match[1]);
+                }
+            }
+            
+            // ChatCompletion
+            if (content.includes('ChatCompletion(')) {
+                const match = content.match(/ChatCompletion\((.+)\)/);
+                if (match) {
+                    result += '<strong style="color:#00aaff">📥 Response</strong>\n\n';
+                    result += formatPythonObject(match[1], 'ChatCompletion');
+                }
+            }
+            
+            // CompletionUsage
+            if (content.includes('CompletionUsage(')) {
+                const match = content.match(/CompletionUsage\(([^)]+)\)/);
+                if (match) {
+                    result += '<strong style="color:#ffaa00">📊 Token Usage</strong>\n\n';
+                    result += formatPythonObject(match[1], 'Usage');
+                }
+            }
+            
+            // ChatCompletionMessage
+            if (content.includes('ChatCompletionMessage(')) {
+                const match = content.match(/ChatCompletionMessage\((.+)\)/);
+                if (match) {
+                    result += '<strong style="color:#ff88ff">💬 Message</strong>\n\n';
+                    result += formatPythonObject(match[1], 'Message');
+                }
+            }
+            
+            if (!result) {
+                result = escapeHtml(content);
+            }
+            
+            return result;
+        }
+        
+        function formatPythonDict(str) {
+            try {
+                // 尝试转换为 JSON 并格式化
+                let jsonStr = str
+                    .replace(/'/g, '"')
+                    .replace(/None/g, 'null')
+                    .replace(/True/g, 'true')
+                    .replace(/False/g, 'false');
+                
+                // 处理尾部可能的额外字符
+                let depth = 0;
+                let endIndex = 0;
+                for (let i = 0; i < jsonStr.length; i++) {
+                    if (jsonStr[i] === '{') depth++;
+                    if (jsonStr[i] === '}') depth--;
+                    if (depth === 0) {
+                        endIndex = i + 1;
+                        break;
+                    }
+                }
+                jsonStr = jsonStr.substring(0, endIndex);
+                
+                const obj = JSON.parse(jsonStr);
+                return syntaxHighlight(JSON.stringify(obj, null, 2));
+            } catch (e) {
+                // 保留原样
+                return escapeHtml(str);
+            }
+        }
+        
+        function formatPythonObject(str, type) {
+            // 提取 key=value 对
+            const result = [];
+            
+            // 简单的 key=value 模式
+            const pattern = /(\w+)=([^,]+?)(?=,\s*\w+=|$)/g;
+            let match;
+            
+            while ((match = pattern.exec(str)) !== null) {
+                const key = match[1];
+                let value = match[2].trim();
+                
+                // 检查是否是嵌套对象
+                if (value.includes('[') || value.includes('(')) {
+                    // 保持原样但缩进
+                    result.push(`<span class="json-key">${key}</span>: ${escapeHtml(value)}`);
+                } else {
+                    // 格式化简单值
+                    if (value.startsWith("'") && value.endsWith("'")) {
+                        value = `<span class="json-string">${escapeHtml(value)}</span>`;
+                    } else if (!isNaN(value)) {
+                        value = `<span class="json-number">${value}</span>`;
+                    } else if (value === 'None') {
+                        value = `<span class="json-null">null</span>`;
+                    }
+                    result.push(`<span class="json-key">${key}</span>: ${value}`);
+                }
+            }
+            
+            return result.join('\n');
+        }
+        
+        function syntaxHighlight(json) {
+            return json
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/(".*?"):/g, '<span class="json-key">$1</span>:')
+                .replace(/: (".*?")/g, ': <span class="json-string">$1</span>')
+                .replace(/: (\d+)/g, ': <span class="json-number">$1</span>')
+                .replace(/: (true|false)/g, ': <span class="json-boolean">$1</span>')
+                .replace(/: (null)/g, ': <span class="json-null">$1</span>');
+        }
+        
+        function closeDetail() {
+            document.getElementById('detailPanel').classList.remove('active');
+            document.getElementById('logPanel').style.width = '100%';
+        }
+        
+        function filterLogs() {
+            const keyword = document.getElementById('filterInput').value.toLowerCase();
+            const levelFilter = document.getElementById('levelFilter').value;
+            
+            filteredLogs = allLogs.filter(log => {
+                const matchKeyword = !keyword || log.content.toLowerCase().includes(keyword);
+                const matchLevel = !levelFilter || log.level === levelFilter;
+                return matchKeyword && matchLevel;
+            });
+            
+            renderLogs();
+            updateStats();
+        }
+        
+        function updateStats() {
+            const stats = document.getElementById('stats');
+            stats.textContent = `显示 ${filteredLogs.length} / ${allLogs.length} 条`;
+        }
+        
+        function reset() {
+            document.getElementById('inputPanel').classList.remove('hidden');
+            document.getElementById('logPanel').classList.remove('active');
+            document.getElementById('detailPanel').classList.remove('active');
+            document.getElementById('logPanel').style.width = '100%';
+            allLogs = [];
+            filteredLogs = [];
+            selectedIndex = -1;
+            document.getElementById('logInput').value = '';
+            document.getElementById('filterInput').value = '';
+            document.getElementById('levelFilter').value = '';
+            document.getElementById('stats').textContent = '';
+        }
+        
+        function loadSample() {
+            const sample = `[DEBUG] OPENAI_API_KEY = sk-xxx
+用户: 3829 乘以 812 是多少？
+[2026-02-06 16:16:21 - openai._base_client:486 - DEBUG] Request options: {'method': 'post', 'url': '/chat/completions', 'json_data': {'messages': [{'role': 'system', 'content': '你是一个有用的助手。如果遇到计算问题，必须调用工具。'}, {'role': 'user', 'content': '3829 乘以 812 是多少？'}], 'model': 'deepseek-chat', 'tool_choice': 'auto', 'tools': [{'type': 'function', 'function': {'name': 'multiply', 'description': '计算两个数字的乘积', 'parameters': {'type': 'object', 'properties': {'a': {'type': 'number'}, 'b': {'type': 'number'}}, 'required': ['a', 'b']}}}]}}
+[2026-02-06 16:16:26 - httpx:1025 - INFO] HTTP Request: POST https://sg.slnt.dev/v1/chat/completions "HTTP/1.1 200 OK"
+[DEBUG] 完整响应: ChatCompletion(id='f2af0d85', choices=[Choice(finish_reason='tool_calls', message=ChatCompletionMessage(content='我来帮你计算 3829 乘以 812。', role='assistant', tool_calls=[ChatCompletionMessageFunctionToolCall(id='call_00_mAlUpX0FFA8NWZnrel81bLbl', function=Function(arguments='{"a": 3829, "b": 812}', name='multiply'), type='function', index=0)]))], model='deepseek-chat', usage=CompletionUsage(completion_tokens=70, prompt_tokens=356, total_tokens=426))
+[DEBUG] Usage: CompletionUsage(completion_tokens=70, prompt_tokens=356, total_tokens=426)
+[系统日志] 正在调用本地函数 multiply: 3829 * 812 ...
+[DEBUG] Message: ChatCompletionMessage(content='我来帮你计算 3829 乘以 812。', role='assistant', tool_calls=[ChatCompletionMessageFunctionToolCall(id='call_00_mAlUpX0FFA8NWZnrel81bLbl', function=Function(arguments='{"a": 3829, "b": 812}', name='multiply'), type='function', index=0)])
+[2026-02-06 16:16:26 - openai._base_client:486 - DEBUG] Request options: {'json_data': {'messages': [{'role': 'system', 'content': '你是一个有用的助手。'}, {'role': 'user', 'content': '3829 乘以 812 是多少？'}, {'role': 'assistant', 'content': '我来帮你计算 3829 乘以 812。', 'tool_calls': [{'id': 'call_00_mAlUpX0FFA8NWZnrel81bLbl', 'function': {'arguments': '{"a": 3829, "b": 812}', 'name': 'multiply'}, 'type': 'function'}]}, {'tool_call_id': 'call_00_mAlUpX0FFA8NWZnrel81bLbl', 'role': 'tool', 'name': 'multiply', 'content': '3109148'}], 'model': 'deepseek-chat'}}
+[2026-02-06 16:16:28 - httpx:1025 - INFO] HTTP Request: POST https://sg.slnt.dev/v1/chat/completions "HTTP/1.1 200 OK"
+[DEBUG] 完整响应: ChatCompletion(id='2f321a66', choices=[Choice(finish_reason='stop', message=ChatCompletionMessage(content='3829 乘以 812 等于 **3,109,148**。', role='assistant'))], model='deepseek-chat', usage=CompletionUsage(completion_tokens=16, prompt_tokens=446, total_tokens=462))
+[DEBUG] Usage: CompletionUsage(completion_tokens=16, prompt_tokens=446, total_tokens=462)
+Agent: 3829 乘以 812 等于 **3,109,148**。`;
+            
+            document.getElementById('logInput').value = sample;
+            parseLogs();
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        function escapeRegex(str) {
+            return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        }
+        
+        // 键盘快捷键
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                parseLogs();
+            }
+            
+            if (document.getElementById('logPanel').classList.contains('active')) {
+                if (e.key === 'ArrowDown' && selectedIndex < filteredLogs.length - 1) {
+                    e.preventDefault();
+                    selectLog(selectedIndex + 1);
+                    scrollToSelected();
+                } else if (e.key === 'ArrowUp' && selectedIndex > 0) {
+                    e.preventDefault();
+                    selectLog(selectedIndex - 1);
+                    scrollToSelected();
+                } else if (e.key === 'Escape') {
+                    closeDetail();
+                }
+            }
+        });
+        
+        function scrollToSelected() {
+            const container = document.getElementById('logContainer');
+            const selected = container.querySelector('.log-entry.selected');
+            if (selected) {
+                selected.scrollIntoView({ block: 'nearest' });
+            }
+        }
+    </script>
+</body>
+</html>

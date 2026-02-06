@@ -1,0 +1,1199 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Log Viewer - 教学可视化工具</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0f1419;
+            --bg-secondary: #1a1f2e;
+            --bg-tertiary: #242938;
+            --border-color: #2d3548;
+            --text-primary: #e8eaed;
+            --text-secondary: #9aa0a6;
+            --accent-blue: #4a9eff;
+            --accent-green: #34d399;
+            --accent-orange: #fb923c;
+            --accent-purple: #a78bfa;
+            --accent-red: #f87171;
+            --tool-bg: #1e3a5f;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* Header */
+        .header {
+            padding: 16px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .logo {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--accent-blue);
+        }
+
+        .logo span {
+            color: var(--accent-green);
+        }
+
+        .header-desc {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Input Section */
+        .input-section {
+            padding: 16px 24px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .input-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .input-area {
+            flex: 1;
+            min-height: 80px;
+            max-height: 150px;
+            padding: 12px;
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            resize: vertical;
+        }
+
+        .input-area:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .btn {
+            padding: 12px 24px;
+            background: var(--accent-blue);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border-color);
+        }
+
+        /* Main Content */
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Timeline */
+        .timeline {
+            width: 280px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            overflow-y: auto;
+        }
+
+        .timeline-header {
+            padding: 12px 16px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .timeline-item {
+            padding: 12px 16px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border-color);
+            transition: all 0.2s;
+        }
+
+        .timeline-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .timeline-item.active {
+            background: var(--tool-bg);
+            border-left: 3px solid var(--accent-blue);
+        }
+
+        .timeline-item.error {
+            border-left: 3px solid var(--accent-red);
+        }
+
+        .timeline-item-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .timeline-icon {
+            width: 24px;
+            height: 24px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+        }
+
+        .icon-request {
+            background: var(--accent-blue);
+        }
+
+        .icon-tool {
+            background: var(--accent-purple);
+        }
+
+        .icon-response {
+            background: var(--accent-green);
+        }
+
+        .timeline-title {
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .timeline-time {
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .timeline-preview {
+            font-size: 12px;
+            color: var(--text-secondary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .timeline-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            font-size: 10px;
+            border-radius: 4px;
+            margin-top: 6px;
+        }
+
+        .badge-tool {
+            background: rgba(167, 139, 250, 0.2);
+            color: var(--accent-purple);
+        }
+
+        .badge-token {
+            background: rgba(52, 211, 153, 0.2);
+            color: var(--accent-green);
+        }
+
+        /* Detail Panel */
+        .detail-panel {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: var(--text-secondary);
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+
+        .detail-section {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            overflow: hidden;
+        }
+
+        .section-header {
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section-content {
+            padding: 16px;
+        }
+
+        /* JSON Display */
+        .json-display {
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-break: break-word;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .json-key {
+            color: var(--accent-blue);
+        }
+
+        .json-string {
+            color: var(--accent-green);
+        }
+
+        .json-number {
+            color: var(--accent-orange);
+        }
+
+        .json-boolean {
+            color: var(--accent-purple);
+        }
+
+        .json-null {
+            color: var(--accent-red);
+        }
+
+        /* Tool Calls */
+        .tool-call {
+            background: var(--bg-primary);
+            border-radius: 8px;
+            margin-bottom: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .tool-header {
+            padding: 10px 14px;
+            background: var(--tool-bg);
+            font-weight: 600;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tool-icon {
+            width: 20px;
+            height: 20px;
+            background: var(--accent-purple);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+        }
+
+        .tool-args {
+            padding: 12px 14px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 12px;
+        }
+
+        .stat-card {
+            background: var(--bg-primary);
+            padding: 14px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: var(--accent-blue);
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        /* Message Role Colors */
+        .role-system {
+            background: rgba(248, 113, 113, 0.2);
+            color: var(--accent-red);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-right: 8px;
+        }
+
+        .role-user {
+            background: rgba(74, 158, 255, 0.2);
+            color: var(--accent-blue);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-right: 8px;
+        }
+
+        .role-assistant {
+            background: rgba(52, 211, 153, 0.2);
+            color: var(--accent-green);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-right: 8px;
+        }
+
+        .role-tool {
+            background: rgba(167, 139, 250, 0.2);
+            color: var(--accent-purple);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin-right: 8px;
+        }
+
+        /* Messages List */
+        .message-item {
+            padding: 12px;
+            background: var(--bg-primary);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .message-role {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .message-content {
+            font-size: 13px;
+            line-height: 1.5;
+            color: var(--text-primary);
+        }
+
+        /* Sample Data Button */
+        .sample-btn {
+            font-size: 12px;
+            padding: 6px 12px;
+            margin-right: 8px;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--bg-primary);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--text-secondary);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .main-content {
+                flex-direction: column;
+            }
+            .timeline {
+                width: 100%;
+                max-height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="logo">Agent <span>Log Viewer</span></div>
+            <div class="header-desc">可视化展示 OpenAI API 请求/响应日志</div>
+        </div>
+
+        <!-- Input Section -->
+        <div class="input-section">
+            <div class="input-row">
+                <textarea class="input-area" id="logInput" placeholder="粘贴 OpenAI SDK 日志...&#10;&#10;支持格式:&#10;- JSON 格式的请求/响应&#10;- SDK 输出日志&#10;- Raw API 调用日志"></textarea>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <button class="btn" onclick="parseLogs()">解析日志</button>
+                    <button class="btn btn-secondary" onclick="loadSampleData()">示例数据</button>
+                    <button class="btn btn-secondary" onclick="clearAll()">清空</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Timeline -->
+            <div class="timeline">
+                <div class="timeline-header">时间线</div>
+                <div id="timelineList">
+                    <div class="empty-state">
+                        <div class="empty-icon">📋</div>
+                        <div>粘贴日志后将在此显示时间线</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detail Panel -->
+            <div class="detail-panel" id="detailPanel">
+                <div class="empty-state">
+                    <div class="empty-icon">🔍</div>
+                    <div>选择时间线中的节点查看详情</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // State
+        let parsedLogs = [];
+        let selectedIndex = -1;
+
+        // Parse Functions
+        function parseLogs() {
+            const input = document.getElementById('logInput').value.trim();
+            if (!input) {
+                alert('请粘贴日志内容');
+                return;
+            }
+
+            try {
+                // Try to parse as SDK debug log format
+                const sdkParsed = parseSDKDebugLog(input);
+                if (sdkParsed.length > 0) {
+                    parsedLogs = sdkParsed;
+                } else {
+                    // Fallback: try JSON first
+                    if (input.startsWith('{') || input.startsWith('[')) {
+                        const json = JSON.parse(input);
+                        parsedLogs = Array.isArray(json) ? json : [json];
+                    } else {
+                        // Try to extract JSON from text
+                        const matches = input.match(/\{[^}]+\}/g);
+                        if (matches) {
+                            parsedLogs = matches.map(m => JSON.parse(m));
+                        } else {
+                            parsedLogs = [{ type: 'text', content: input }];
+                        }
+                    }
+                }
+
+                renderTimeline();
+                if (parsedLogs.length > 0) {
+                    selectLog(0);
+                }
+            } catch (e) {
+                alert('解析失败: ' + e.message);
+            }
+        }
+
+        // Parse OpenAI SDK Debug Log format
+        function parseSDKDebugLog(input) {
+            const sessions = [];
+            const lines = input.split('\n');
+            
+            // 状态变量
+            let currentSession = null;
+            let lastMessages = [];
+            let lastModel = 'unknown';
+            let lastUsage = null;
+            let lastToolCalls = [];
+            let lastAssistantContent = '';
+            let lastToolResult = null;
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                
+                // 1. 提取 json_data 中的 messages（这是核心！）
+                if (line.includes("'json_data':") && line.includes("'messages':")) {
+                    // 提取 messages 数组
+                    const messagesMatch = line.match(/'messages':\s*(\[[\s\S]*?\]),\s*'model'/);
+                    if (messagesMatch) {
+                        try {
+                            // 将 Python 风格的字符串转为 JSON
+                            let msgStr = messagesMatch[1]
+                                .replace(/'/g, '"')
+                                .replace(/None/g, 'null')
+                                .replace(/True/g, 'true')
+                                .replace(/False/g, 'false');
+                            lastMessages = JSON.parse(msgStr);
+                        } catch (e) {
+                            // 手动解析
+                            lastMessages = extractMessagesManually(line);
+                        }
+                    }
+                    
+                    // 提取 model
+                    const modelMatch = line.match(/'model':\s*'([^']+)'/);
+                    if (modelMatch) {
+                        lastModel = modelMatch[1];
+                    }
+                }
+                
+                // 2. 提取用户问题（备用方式）
+                if (line.startsWith('用户:') || line.match(/^用户:\s*/)) {
+                    lastMessages = [{
+                        role: 'user',
+                        content: line.replace(/^用户:\s*/, '')
+                    }];
+                }
+                
+                // 3. 提取 Usage
+                if (line.includes('[DEBUG] Usage:')) {
+                    const match = line.match(/completion_tokens=(\d+).*?prompt_tokens=(\d+).*?total_tokens=(\d+)/);
+                    if (match) {
+                        lastUsage = {
+                            completion_tokens: parseInt(match[1]),
+                            prompt_tokens: parseInt(match[2]),
+                            total_tokens: parseInt(match[3])
+                        };
+                    }
+                }
+                
+                // 4. 提取 tool_calls
+                if (line.includes('[DEBUG] Message:') && line.includes('tool_calls=')) {
+                    const idMatch = line.match(/id='([^']+)'/);
+                    const nameMatch = line.match(/name='([^']+)'/);
+                    const argsMatch = line.match(/arguments='([^']+)'/);
+                    const contentMatch = line.match(/content='([^']*)'/);
+                    
+                    if (nameMatch) {
+                        lastToolCalls = [{
+                            id: idMatch ? idMatch[1] : 'unknown',
+                            function: {
+                                name: nameMatch[1],
+                                arguments: argsMatch ? argsMatch[1] : '{}'
+                            }
+                        }];
+                        lastAssistantContent = contentMatch ? contentMatch[1] : '';
+                    }
+                }
+                
+                // 5. 提取工具执行日志
+                if (line.includes('[系统日志]') && line.includes('调用本地函数')) {
+                    const match = line.match(/调用本地函数\s+(\w+):\s*(.+)/);
+                    if (match) {
+                        lastToolResult = {
+                            function: match[1],
+                            result: match[2].trim()
+                        };
+                    }
+                }
+                
+                // 6. 检测完成的响应 - finish_reason='tool_calls' 表示工具调用轮次
+                if (line.includes("finish_reason='tool_calls'")) {
+                    sessions.push({
+                        id: sessions.length + 1,
+                        type: 'tool_call',
+                        request: {
+                            model: lastModel,
+                            messages: [...lastMessages]
+                        },
+                        response: {
+                            content: lastAssistantContent,
+                            usage: lastUsage
+                        },
+                        toolCalls: lastToolCalls.length > 0 ? [...lastToolCalls] : null,
+                        toolResult: lastToolResult
+                    });
+                    
+                    // 保留 messages 用于下一轮
+                    lastToolCalls = [];
+                    lastUsage = null;
+                    lastToolResult = null;
+                }
+                
+                // 7. 检测最终响应 - finish_reason='stop'
+                if (line.includes("finish_reason='stop'")) {
+                    const contentMatch = line.match(/content='([^']+)'/);
+                    sessions.push({
+                        id: sessions.length + 1,
+                        type: 'final',
+                        request: {
+                            model: lastModel,
+                            messages: [...lastMessages]
+                        },
+                        response: {
+                            content: contentMatch ? contentMatch[1] : '',
+                            usage: lastUsage
+                        },
+                        toolCalls: null,
+                        toolResult: lastToolResult
+                    });
+                }
+                
+                // 8. 提取 Agent 最终输出（备用）
+                if (line.startsWith('Agent:')) {
+                    const content = line.replace(/^Agent:\s*/, '');
+                    if (sessions.length > 0 && sessions[sessions.length - 1].type === 'final') {
+                        sessions[sessions.length - 1].response.content = content;
+                    }
+                }
+            }
+            
+            // 如果没有解析到 session，尝试简单格式
+            if (sessions.length === 0) {
+                return parseSimpleFormat(input);
+            }
+            
+            return sessions;
+        }
+        
+        // 手动提取 messages
+        function extractMessagesManually(line) {
+            const messages = [];
+            
+            // 匹配每个 message 对象
+            const pattern = /\{'role':\s*'([^']+)',\s*'content':\s*'([^']*)'\}/g;
+            let match;
+            while ((match = pattern.exec(line)) !== null) {
+                messages.push({
+                    role: match[1],
+                    content: match[2]
+                });
+            }
+            
+            return messages;
+        }
+        
+        // 简单格式解析：直接提取关键信息
+        function parseSimpleFormat(input) {
+            const sessions = [];
+            const lines = input.split('\n');
+            
+            let currentMessages = [];
+            let currentModel = 'unknown';
+            let currentUsage = null;
+            let currentToolCalls = [];
+            let currentToolResult = null;
+            let currentContent = '';
+            let sessionType = 'request';
+            
+            for (const line of lines) {
+                // 提取用户问题
+                if (line.startsWith('用户:') || line.startsWith('User:')) {
+                    currentMessages.push({
+                        role: 'user',
+                        content: line.replace(/^(用户|User):\s*/, '')
+                    });
+                }
+                
+                // 提取 model
+                const modelMatch = line.match(/\[DEBUG\] Model:\s*(\S+)/);
+                if (modelMatch) {
+                    currentModel = modelMatch[1];
+                }
+                
+                // 提取 Usage
+                const usageMatch = line.match(/\[DEBUG\] Usage:\s*CompletionUsage\(completion_tokens=(\d+),\s*prompt_tokens=(\d+),\s*total_tokens=(\d+)/);
+                if (usageMatch) {
+                    currentUsage = {
+                        completion_tokens: parseInt(usageMatch[1]),
+                        prompt_tokens: parseInt(usageMatch[2]),
+                        total_tokens: parseInt(usageMatch[3])
+                    };
+                }
+                
+                // 提取 tool_calls
+                const toolMatch = line.match(/tool_calls=\[ChatCompletionMessageFunctionToolCall\(id='([^']+)'.*?function=Function\(arguments='([^']+)',\s*name='([^']+)'\)/);
+                if (toolMatch) {
+                    currentToolCalls.push({
+                        id: toolMatch[1],
+                        function: {
+                            name: toolMatch[3],
+                            arguments: toolMatch[2]
+                        }
+                    });
+                    sessionType = 'tool_call';
+                }
+                
+                // 提取工具执行结果
+                if (line.includes('[系统日志]')) {
+                    const funcMatch = line.match(/调用本地函数\s+(\w+):\s*(.+)/);
+                    if (funcMatch) {
+                        currentToolResult = {
+                            function: funcMatch[1],
+                            result: funcMatch[2].trim()
+                        };
+                    }
+                }
+                
+                // 提取 Agent 响应
+                if (line.startsWith('Agent:')) {
+                    currentContent = line.replace(/^Agent:\s*/, '');
+                    sessionType = 'final';
+                }
+                
+                // 提取 finish_reason='stop' 表示最终响应
+                if (line.includes("finish_reason='stop'")) {
+                    sessionType = 'final';
+                    const contentMatch = line.match(/content='([^']+)'/);
+                    if (contentMatch) {
+                        currentContent = contentMatch[1];
+                    }
+                }
+            }
+            
+            // 构建单个会话
+            if (currentMessages.length > 0 || currentToolCalls.length > 0 || currentContent) {
+                sessions.push({
+                    id: 1,
+                    type: sessionType,
+                    request: {
+                        model: currentModel,
+                        messages: currentMessages
+                    },
+                    response: {
+                        content: currentContent,
+                        usage: currentUsage
+                    },
+                    toolCalls: currentToolCalls.length > 0 ? currentToolCalls : null,
+                    toolResult: currentToolResult
+                });
+            }
+            
+            return sessions;
+        }
+
+        function extractMessages(jsonStr) {
+            const messages = [];
+            // Match 'role': 'system'|'user'|'assistant'|'tool', 'content': '...'
+            const pattern = /'role':\s*'([^']+)'[^}]*?'content':\s*'([^']*)'/g;
+            let match;
+            while ((match = pattern.exec(jsonStr)) !== null) {
+                messages.push({
+                    role: match[1],
+                    content: match[2]
+                });
+            }
+            // Handle multiline content
+            if (messages.length === 0) {
+                const msgPattern = /'role':\s*'([^']+)'[^}]+'content':\s*/s;
+                // Simpler extraction
+                const parts = jsonStr.matchAll(/'role':\s*'([^']+)'/g);
+                for (const m of parts) {
+                    const role = m[1];
+                    let content = '';
+                    const afterRole = jsonStr.substring(m.index + m[0].length);
+                    const contentMatch = afterRole.match(/'content':\s*'([^']*)'/);
+                    if (contentMatch) {
+                        content = contentMatch[1];
+                    }
+                    messages.push({ role, content });
+                }
+            }
+            return messages;
+        }
+
+        function extractTools(jsonStr) {
+            const tools = [];
+            const toolPattern = /'type':\s*'function',\s*'function':\s*\{'name':\s*'([^']+)',\s*'description':\s*'([^']*)'[^}]*'parameters':\s*\{[^}]+\}/g;
+            let match;
+            while ((match = toolPattern.exec(jsonStr)) !== null) {
+                tools.push({
+                    type: 'function',
+                    function: {
+                        name: match[1],
+                        description: match[2]
+                    }
+                });
+            }
+            return tools;
+        }
+
+        function extractUsage(line) {
+            const usage = {};
+            const promptMatch = line.match(/prompt_tokens:\s*(\d+)/);
+            const completionMatch = line.match(/completion_tokens:\s*(\d+)/);
+            const totalMatch = line.match(/total_tokens:\s*(\d+)/);
+
+            if (promptMatch) usage.prompt_tokens = parseInt(promptMatch[1]);
+            if (completionMatch) usage.completion_tokens = parseInt(completionMatch[1]);
+            if (totalMatch) usage.total_tokens = parseInt(totalMatch[1]);
+
+            return Object.keys(usage).length > 0 ? usage : null;
+        }
+
+        function renderTimeline() {
+            const container = document.getElementById('timelineList');
+            container.innerHTML = '';
+
+            if (parsedLogs.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">📋</div>
+                        <div>未找到有效的日志数据</div>
+                    </div>
+                `;
+                return;
+            }
+
+            parsedLogs.forEach((log, index) => {
+                const item = document.createElement('div');
+                item.className = `timeline-item ${selectedIndex === index ? 'active' : ''}`;
+                item.onclick = () => selectLog(index);
+
+                const info = extractLogInfo(log);
+                item.innerHTML = `
+                    <div class="timeline-item-header">
+                        <div class="timeline-icon ${info.iconClass}">${info.icon}</div>
+                        <div class="timeline-title">${info.title}</div>
+                    </div>
+                    <div class="timeline-time">${info.time}</div>
+                    <div class="timeline-preview">${info.preview}</div>
+                    ${info.badges.map(b => `<span class="timeline-badge badge-${b.type}">${b.text}</span>`).join('')}
+                `;
+
+                container.appendChild(item);
+            });
+        }
+
+        function extractLogInfo(log) {
+            let iconClass = 'icon-request';
+            let icon = '📝';
+            let title = '请求';
+            let time = '';
+            let preview = '';
+            let badges = [];
+
+            // Handle session-based structure
+            if (log.request && log.request.timestamp) {
+                time = new Date(log.request.timestamp).toLocaleTimeString('zh-CN');
+            }
+
+            if (log.type === 'tool_call') {
+                iconClass = 'icon-tool';
+                icon = '🔧';
+                title = '工具调用';
+                preview = log.toolCalls ? log.toolCalls.map(tc => tc.function?.name || 'unknown').join(', ') : '';
+                badges = [{ type: 'tool', text: '调用工具' }];
+            } else if (log.type === 'final') {
+                iconClass = 'icon-response';
+                icon = '✅';
+                title = '最终响应';
+                if (log.response && log.response.usage) {
+                    badges = [
+                        { type: 'token', text: `Prompt: ${log.response.usage.prompt_tokens}` },
+                        { type: 'token', text: `Total: ${log.response.usage.total_tokens}` }
+                    ];
+                }
+            } else if (log.request && log.request.messages) {
+                title = log.request.model || '请求';
+                const lastMsg = log.request.messages[log.request.messages.length - 1];
+                if (lastMsg && lastMsg.content) {
+                    preview = lastMsg.content.substring(0, 50);
+                }
+                if (log.toolCalls && log.toolCalls.length > 0) {
+                    iconClass = 'icon-tool';
+                    icon = '🔧';
+                    badges = [{ type: 'tool', text: `${log.toolCalls.length} 个工具` }];
+                }
+            }
+
+            if (log.toolResult) {
+                preview = `${log.toolResult.function}: ${log.toolResult.result}`;
+            }
+
+            return { iconClass, icon, title, time, preview, badges };
+        }
+
+        function selectLog(index) {
+            selectedIndex = index;
+            renderTimeline();
+            renderDetail(parsedLogs[index]);
+        }
+
+        function renderDetail(log) {
+            const container = document.getElementById('detailPanel');
+
+            if (!log) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🔍</div>
+                        <div>选择时间线中的节点查看详情</div>
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '';
+
+            // Session Header
+            html += `
+                <div class="detail-section">
+                    <div class="section-header">📋 会话信息</div>
+                    <div class="section-content">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-value">${log.type === 'final' ? '✅ 完成' : (log.type === 'tool_call' ? '🔧 工具' : '📝 请求')}</div>
+                                <div class="stat-label">类型</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-value">${log.request?.model || 'deepseek-chat'}</div>
+                                <div class="stat-label">模型</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            // Token Usage
+            if (log.response && log.response.usage) {
+                const usage = log.response.usage;
+                html += `
+                    <div class="detail-section">
+                        <div class="section-header">📊 Token 统计</div>
+                        <div class="section-content">
+                            <div class="stats-grid">
+                                <div class="stat-card">
+                                    <div class="stat-value">${usage.prompt_tokens || 0}</div>
+                                    <div class="stat-label">Prompt Tokens</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-value">${usage.completion_tokens || 0}</div>
+                                    <div class="stat-label">Completion Tokens</div>
+                                </div>
+                                <div class="stat-card">
+                                    <div class="stat-value">${usage.total_tokens || 0}</div>
+                                    <div class="stat-label">Total Tokens</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Request Messages
+            if (log.request && log.request.messages) {
+                html += `
+                    <div class="detail-section">
+                        <div class="section-header">💬 消息列表</div>
+                        <div class="section-content">
+                            ${log.request.messages.map(msg => `
+                                <div class="message-item">
+                                    <div class="message-role">
+                                        <span class="role-${msg.role}">${getRoleLabel(msg.role)}</span>
+                                    </div>
+                                    <div class="message-content">${formatContent(msg.content)}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Tool Calls
+            if (log.toolCalls && log.toolCalls.length > 0) {
+                html += `
+                    <div class="detail-section">
+                        <div class="section-header">🔧 工具调用</div>
+                        <div class="section-content">
+                            ${log.toolCalls.map(tc => `
+                                <div class="tool-call">
+                                    <div class="tool-header">
+                                        <div class="tool-icon">🔧</div>
+                                        ${tc.function?.name || 'Unknown Tool'}
+                                    </div>
+                                    <div class="tool-args">${formatJSON(tc.function?.arguments || '{}')}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Tool Result
+            if (log.toolResult) {
+                html += `
+                    <div class="detail-section">
+                        <div class="section-header">📥 工具结果</div>
+                        <div class="section-content">
+                            <div class="message-item">
+                                <div class="message-role">
+                                    <span class="role-tool">${log.toolResult.function}</span>
+                                </div>
+                                <div class="message-content">${log.toolResult.result}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            // Assistant Response
+            if (log.response && log.response.choices) {
+                const assistantMsg = log.response.choices[0]?.message;
+                if (assistantMsg && assistantMsg.content) {
+                    html += `
+                        <div class="detail-section">
+                            <div class="section-header">🤖 Assistant 响应</div>
+                            <div class="section-content">
+                                <div class="message-item">
+                                    <div class="message-role">
+                                        <span class="role-assistant">Assistant</span>
+                                    </div>
+                                    <div class="message-content">${formatContent(assistantMsg.content)}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+
+            // Raw JSON (entire session)
+            html += `
+                <div class="detail-section">
+                    <div class="section-header">📄 原始数据</div>
+                    <div class="section-content">
+                        <div class="json-display">${formatJSON(JSON.stringify(log, null, 2))}</div>
+                    </div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+        }
+
+        function getRoleLabel(role) {
+            const labels = {
+                'system': 'System',
+                'user': 'User',
+                'assistant': 'Assistant',
+                'tool': 'Tool'
+            };
+            return labels[role] || role;
+        }
+
+        function formatContent(content) {
+            if (!content) return '<span style="color: var(--text-secondary)">(null)</span>';
+            return content.replace(/\n/g, '<br>');
+        }
+
+        function formatJSON(jsonStr) {
+            try {
+                const obj = JSON.parse(jsonStr);
+                return `<span class="json-display">${syntaxHighlight(JSON.stringify(obj, null, 2))}</span>`;
+            } catch {
+                return `<span class="json-display">${escapeHtml(jsonStr)}</span>`;
+            }
+        }
+
+        function syntaxHighlight(json) {
+            return json
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/(".*?"):/g, '<span class="json-key">$1</span>:')
+                .replace(/: (".*?")/g, ': <span class="json-string">$1</span>')
+                .replace(/: (\d+)/g, ': <span class="json-number">$1</span>')
+                .replace(/: (true|false)/g, ': <span class="json-boolean">$1</span>')
+                .replace(/: (null)/g, ': <span class="json-null">$1</span>');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function loadSampleData() {
+            const sampleLog = `[DEBUG] OPENAI_API_KEY = sk-xxx
+用户: 3829 乘以 812 是多少？
+[2026-02-06 16:16:21 - openai._base_client:486 - DEBUG] Request options: {'method': 'post', 'url': '/chat/completions', 'json_data': {'messages': [{'role': 'system', 'content': '你是一个有用的助手。如果遇到计算问题，必须调用工具。'}, {'role': 'user', 'content': '3829 乘以 812 是多少？'}], 'model': 'deepseek-chat', 'tool_choice': 'auto', 'tools': [{'type': 'function', 'function': {'name': 'multiply', 'description': '计算两个数字的乘积', 'parameters': {'type': 'object', 'properties': {'a': {'type': 'number'}, 'b': {'type': 'number'}}, 'required': ['a', 'b']}}}]}}
+[2026-02-06 16:16:26 - httpx:1025 - INFO] HTTP Request: POST https://sg.slnt.dev/v1/chat/completions "HTTP/1.1 200 OK"
+[DEBUG] 完整响应: ChatCompletion(id='f2af0d85', choices=[Choice(finish_reason='tool_calls', message=ChatCompletionMessage(content='我来帮你计算 3829 乘以 812。', role='assistant', tool_calls=[ChatCompletionMessageFunctionToolCall(id='call_00_mAlUpX0FFA8NWZnrel81bLbl', function=Function(arguments='{"a": 3829, "b": 812}', name='multiply'), type='function', index=0)]))], model='deepseek-chat', usage=CompletionUsage(completion_tokens=70, prompt_tokens=356, total_tokens=426))
+[DEBUG] Usage: CompletionUsage(completion_tokens=70, prompt_tokens=356, total_tokens=426)
+[系统日志] 正在调用本地函数 multiply: 3829 * 812 ...
+[DEBUG] Message: ChatCompletionMessage(content='我来帮你计算 3829 乘以 812。', role='assistant', tool_calls=[ChatCompletionMessageFunctionToolCall(id='call_00_mAlUpX0FFA8NWZnrel81bLbl', function=Function(arguments='{"a": 3829, "b": 812}', name='multiply'), type='function', index=0)])
+[2026-02-06 16:16:26 - openai._base_client:486 - DEBUG] Request options: {'json_data': {'messages': [{'role': 'system', 'content': '你是一个有用的助手。'}, {'role': 'user', 'content': '3829 乘以 812 是多少？'}, {'role': 'assistant', 'content': '我来帮你计算 3829 乘以 812。', 'tool_calls': [{'id': 'call_00_mAlUpX0FFA8NWZnrel81bLbl', 'function': {'arguments': '{"a": 3829, "b": 812}', 'name': 'multiply'}, 'type': 'function'}]}, {'tool_call_id': 'call_00_mAlUpX0FFA8NWZnrel81bLbl', 'role': 'tool', 'name': 'multiply', 'content': '3109148'}], 'model': 'deepseek-chat'}}
+[2026-02-06 16:16:28 - httpx:1025 - INFO] HTTP Request: POST https://sg.slnt.dev/v1/chat/completions "HTTP/1.1 200 OK"
+[DEBUG] 完整响应: ChatCompletion(id='2f321a66', choices=[Choice(finish_reason='stop', message=ChatCompletionMessage(content='3829 乘以 812 等于 **3,109,148**。', role='assistant'))], model='deepseek-chat', usage=CompletionUsage(completion_tokens=16, prompt_tokens=446, total_tokens=462))
+[DEBUG] Usage: CompletionUsage(completion_tokens=16, prompt_tokens=446, total_tokens=462)`;
+
+            document.getElementById('logInput').value = sampleLog;
+            parseLogs();
+        }
+
+        function clearAll() {
+            document.getElementById('logInput').value = '';
+            parsedLogs = [];
+            selectedIndex = -1;
+            renderTimeline();
+            document.getElementById('detailPanel').innerHTML = `
+                <div class="empty-state">
+                    <div class="empty-icon">🔍</div>
+                    <div>选择时间线中的节点查看详情</div>
+                </div>
+            `;
+        }
+
+        // Keyboard shortcut
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.key === 'Enter') {
+                parseLogs();
+            }
+        });
+    </script>
+</body>
+</html>
