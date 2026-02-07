@@ -12,7 +12,7 @@ from openai import OpenAI
 # 只需要将 base_url 指向 NewAPI 的地址
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY"),
-    base_url="https://sg.slnt.dev/v1/"     # NewAPI 的地址
+    base_url=os.getenv("OPENAI_BASE_URL")
 )
 
 # ----------------------
