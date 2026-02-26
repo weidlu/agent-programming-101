@@ -26,6 +26,19 @@ def multiply(a, b):
     print(f"\n[系统日志] 正在调用本地函数 multiply: {a} * {b} ...")
     return a * b
 
+def get_current_weather(city):
+    """
+    获取指定城市的天气情况 (Mock实现)
+    """
+    print(f"\n[系统日志] 正在调用本地函数 get_current_weather: {city} ...")
+    # 这里是写死的假数据，实际中可以调用真实的天气 API
+    weather_data = {
+        "北京": "晴空万里，气温 25°C",
+        "上海": "阴有小雨，气温 22°C",
+        "深圳": "多云，气温 28°C",
+    }
+    return weather_data.get(city, f"未知城市 [{city}] 的天气")
+
 # ----------------------
 # 2. 定义工具描述 (Schema)
 # ----------------------
@@ -51,12 +64,30 @@ tools = [
                 "required": ["a", "b"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_weather",
+            "description": "获取指定城市的当前天气情况。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "城市名称，例如 '北京', '上海'"
+                    }
+                },
+                "required": ["city"]
+            }
+        }
     }
 ]
 
 # 映射表：字符串 -> 真实函数
 available_functions = {
-    "multiply": multiply
+    "multiply": multiply,
+    "get_current_weather": get_current_weather
 }
 
 # ----------------------
@@ -65,14 +96,22 @@ available_functions = {
 def run_agent(user_query):
     # 初始化对话历史
     messages = [
-        {"role": "system", "content": "你是一个有用的助手。如果遇到计算问题，必须调用工具。"},
+        {"role": "system", "content": "你是一个有用的助手。如果遇到计算或天气查询问题，必须调用工具。"},
         {"role": "user", "content": user_query}
     ]
 
     print(f"用户: {user_query}")
 
+    step = 0
+    max_steps = 5
+
     # --- 开始循环 ---
     while True:
+        step += 1
+        if step > max_steps:
+            print("[系统日志] 达到最大步数限制，强制退出循环！")
+            break
+
         # Step A: 思考 (调用 LLM)
         response = client.chat.completions.create(
             model="deepseek-chat",  # 可以换成 deepseek-chat, claude-3-5-sonnet 等 NewAPI 支持的模型
@@ -105,10 +144,13 @@ def run_agent(user_query):
                 # Step C: 行动 (执行 Python 代码)
                 if function_name in available_functions:
                     function_to_call = available_functions[function_name]
-                    function_response = function_to_call(
-                        a=function_args.get("a"),
-                        b=function_args.get("b")
-                    )
+                    
+                    try:
+                        # 动态传入所有参数，支持多个工具不同的参数
+                        function_response = function_to_call(**function_args)
+                    except Exception as e:
+                        print(f"\n[系统日志] 工具执行异常: {e}")
+                        function_response = f"执行工具时发生错误: {str(e)}"
                     
                     # Step D: 观察 (把结果封装成 Tool Message 塞回去)
                     # 这里的 tool_call_id 非常重要，LLM 靠它知道这个结果对应哪次调用
@@ -134,5 +176,8 @@ if __name__ == "__main__":
     # 测试 1: 不需要工具
     # run_agent("你好，你是谁？")
     
-    # 测试 2: 需要工具
-    run_agent("3829 乘以 812 是多少？")
+    # 测试 2: 单一工具
+    # run_agent("3829 乘以 812 是多少？")
+    
+    # 测试 3: 多个工具调用 + 异常模拟（可选）
+    run_agent("北京天气怎么样？对了，顺便算一下 3829 乘以 812 是多少？")
