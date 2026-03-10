@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from typing import Annotated, Any
 
 from dotenv import load_dotenv
@@ -33,9 +34,28 @@ from pydantic import BaseModel, Field
 
 from retriever import SEARCH_TOOL_SCHEMA, run_search_tool
 
-load_dotenv()
+load_dotenv(override=True)
+
+for stream_name in ("stdin", "stdout", "stderr"):
+    stream = getattr(sys, stream_name, None)
+    reconfigure = getattr(stream, "reconfigure", None)
+    if reconfigure is not None:
+        try:
+            reconfigure(errors="replace")
+        except Exception:
+            pass
 
 CHAT_MODEL = os.getenv("CHAT_MODEL", "MiniMax-M2.5")
+
+# Debug: 确认当前使用的配置
+print("--- [DEBUG CONFIG] ---")
+raw_key = os.getenv("OPENAI_API_KEY", "")
+raw_url = os.getenv("OPENAI_BASE_URL", "")
+masked_key = f"{raw_key[:12]}...{raw_key[-8:]}" if raw_key else "NONE"
+print(f"API_KEY: {masked_key}")
+print(f"BASE_URL: {raw_url}")
+print(f"MODEL: {CHAT_MODEL}")
+print("----------------------\n")
 
 
 def get_client() -> OpenAI:
@@ -68,6 +88,92 @@ SYSTEM_PROMPT = """你是一个聪明的学习助手，专门解答 AI Agent 开
 4. 回答时要引用笔记中的具体内容，注明来源文件。"""
 
 
+def _normalize_role(role: Any) -> str:
+    if role == "human":
+        return "user"
+    if role == "ai":
+        return "assistant"
+    return role or "user"
+
+
+def _message_to_api(msg: Any) -> dict[str, Any]:
+    if isinstance(msg, dict):
+        role = _normalize_role(msg.get("role") or msg.get("type"))
+        api_msg: dict[str, Any] = {"role": role, "content": msg.get("content", "")}
+        if msg.get("tool_calls"):
+            api_msg["tool_calls"] = msg["tool_calls"]
+        if role == "tool":
+            api_msg["tool_call_id"] = msg.get("tool_call_id", "")
+            if msg.get("name"):
+                api_msg["name"] = msg["name"]
+        return api_msg
+
+    role = _normalize_role(getattr(msg, "type", "user"))
+    api_msg = {"role": role, "content": getattr(msg, "content", "")}
+    extra = getattr(msg, "additional_kwargs", {}) or {}
+    tool_calls = getattr(msg, "tool_calls", None) or extra.get("tool_calls")
+    if tool_calls:
+        api_msg["tool_calls"] = tool_calls
+    if role == "tool":
+        api_msg["tool_call_id"] = getattr(msg, "tool_call_id", "")
+        name = getattr(msg, "name", None)
+        if name:
+            api_msg["name"] = name
+    return api_msg
+
+
+def _coerce_text_content(content: Any) -> str:
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict):
+                text = item.get("text") or item.get("content")
+                if text:
+                    parts.append(str(text))
+            elif item:
+                parts.append(str(item))
+        return "\n".join(parts)
+    return str(content)
+
+
+def _extract_choice_message(response: Any) -> tuple[Any | None, str | None]:
+    choices = getattr(response, "choices", None)
+    if not choices:
+        return None, f"响应中缺少 choices，实际类型: {type(response).__name__}"
+
+    choice = choices[0]
+    message = getattr(choice, "message", None)
+    if message is None:
+        return None, "响应中缺少 message 字段"
+
+    return choice, None
+
+
+def _tool_messages_from_state(messages: list[Any]) -> list[dict[str, str]]:
+    tool_messages: list[dict[str, str]] = []
+    for msg in messages:
+        if isinstance(msg, dict):
+            role = _normalize_role(msg.get("role") or msg.get("type"))
+            if role == "tool":
+                tool_messages.append({
+                    "name": str(msg.get("name") or "search_notes"),
+                    "content": _coerce_text_content(msg.get("content")),
+                })
+            continue
+
+        if _normalize_role(getattr(msg, "type", None)) != "tool":
+            continue
+        tool_messages.append({
+            "name": str(getattr(msg, "name", None) or "search_notes"),
+            "content": _coerce_text_content(getattr(msg, "content", "")),
+        })
+    return tool_messages
+
+
 def llm_with_tools(state: RAGState) -> dict[str, Any]:
     """
     Let the LLM decide whether to call search_notes.
@@ -80,26 +186,39 @@ def llm_with_tools(state: RAGState) -> dict[str, Any]:
 
     messages_for_api = [{"role": "system", "content": SYSTEM_PROMPT}]
     for msg in state.messages:
-        role = getattr(msg, "type", "user")
-        if role == "human":
-            role = "user"
-        elif role == "ai":
-            role = "assistant"
-        content = getattr(msg, "content", str(msg))
-        messages_for_api.append({"role": role, "content": content})
+        messages_for_api.append(_message_to_api(msg))
 
-    response = client.chat.completions.create(
-        model=CHAT_MODEL,
-        messages=messages_for_api,
-        tools=[SEARCH_TOOL_SCHEMA],
-        tool_choice="auto",  # LLM自己决定是否调用工具
-    )
+    try:
+        response = client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=messages_for_api,
+            tools=[SEARCH_TOOL_SCHEMA],
+            tool_choice="auto",  # LLM自己决定是否调用工具
+        )
+    except Exception as e:
+        return {
+            "messages": [{"role": "assistant", "content": f"[系统报错] 调用大模型 API 发生异常: {str(e)}"}],
+            "needs_retrieval": False,
+        }
 
-    choice = response.choices[0]
+    # 兼容处理：防备代理/中转 API 抽风，返回了包含错误信息的普通字符串而不是标准 JSON
+    if isinstance(response, str):
+        return {
+            "messages": [{"role": "assistant", "content": f"[API中转报错] 返回了无效对象: {response}"}],
+            "needs_retrieval": False,
+        }
+
+    choice, error = _extract_choice_message(response)
+    if error:
+        return {
+            "messages": [{"role": "assistant", "content": f"[API返回异常] {error}"}],
+            "needs_retrieval": False,
+        }
+
     msg = choice.message
 
     # Build a serializable message dict (not langchain object)
-    ai_msg: dict[str, Any] = {"role": "assistant", "content": msg.content or ""}
+    ai_msg: dict[str, Any] = {"role": "assistant", "content": _coerce_text_content(msg.content)}
 
     if choice.finish_reason == "tool_calls" and msg.tool_calls:
         # LLM wants to call a tool — store the tool call info for the executor
@@ -126,41 +245,69 @@ def llm_with_tools(state: RAGState) -> dict[str, Any]:
 def tool_executor(state: RAGState) -> dict[str, Any]:
     """
     Execute tool calls that the LLM requested.
-
-    Notice: this is almost identical to what you wrote manually in Phase 1!
-    LangGraph just separates it into a clean node.
+    Made robust to handle different message formats from LangGraph/Proxies.
     """
     tool_messages = []
 
     # Find the latest AI message with tool_calls
     for msg in reversed(state.messages):
-        raw_tool_calls = getattr(msg, "additional_kwargs", {}).get("tool_calls") or getattr(
-            msg, "tool_calls", None
-        )
-        if not raw_tool_calls:
-            # Try if msg is dict-like
-            if isinstance(msg, dict) and msg.get("tool_calls"):
-                raw_tool_calls = msg["tool_calls"]
+        # LangGraph message objects often store tool_calls in .tool_calls
+        # but sometimes it's in additional_kwargs
+        raw_tool_calls = getattr(msg, "tool_calls", None) or getattr(msg, "additional_kwargs", {}).get("tool_calls")
+        
+        # If it's a dict, try to get tool_calls key
+        if not raw_tool_calls and isinstance(msg, dict):
+            raw_tool_calls = msg.get("tool_calls")
 
         if raw_tool_calls:
+            print(f"\n[系统日志] 发现 {len(raw_tool_calls)} 个工具调用请求...")
             for tc in raw_tool_calls:
+                # 1. 提取 ID
+                tc_id = getattr(tc, "id", None) or (tc.get("id") if isinstance(tc, dict) else None)
+                
+                # 2. 提取函数名和参数 (支持多种嵌套格式)
+                name = None
+                args_str = None
+                
                 if isinstance(tc, dict):
-                    tc_id = tc["id"]
-                    name = tc["function"]["name"]
-                    args_str = tc["function"]["arguments"]
+                    # 格式 A: OpenAI 官方 {"function": {"name": "...", "arguments": "..."}}
+                    if "function" in tc:
+                        name = tc["function"].get("name")
+                        args_str = tc["function"].get("arguments")
+                    # 格式 B: 扁平化格式 {"name": "...", "args": {...}}
+                    else:
+                        name = tc.get("name")
+                        args_str = tc.get("args") or tc.get("arguments")
                 else:
-                    tc_id = tc.id
-                    name = tc.function.name
-                    args_str = tc.function.arguments
+                    # 格式 C: 对象格式 (OpenAI SDK / LangChain Message)
+                    name = getattr(tc.function, "name", None) if hasattr(tc, "function") else getattr(tc, "name", None)
+                    args_str = getattr(tc.function, "arguments", None) if hasattr(tc, "function") else getattr(tc, "args", None)
 
+                if not name:
+                    print(f"  [警告] 无法从工具请求中解析出函数名: {tc}")
+                    continue
+
+                # 3. 执行
+                print(f"  -> 执行工具: {name} (参数: {args_str})")
                 args = json.loads(args_str) if isinstance(args_str, str) else args_str
-                result = run_search_tool(args)
-                tool_messages.append({
-                    "role": "tool",
-                    "tool_call_id": tc_id,
-                    "content": result,
-                    "name": name,
-                })
+                if not args: args = {}
+                
+                try:
+                    result = run_search_tool(args)
+                    tool_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": result,
+                        "name": name,
+                    })
+                except Exception as e:
+                    print(f"  [系统异常] 执行工具 {name} 失败: {e}")
+                    tool_messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc_id,
+                        "content": f"工具执行报错: {str(e)}",
+                        "name": name,
+                    })
             break
 
     return {"messages": tool_messages}
@@ -173,28 +320,51 @@ def llm_answer(state: RAGState) -> dict[str, Any]:
     """
     client = get_client()
 
+    tool_messages = _tool_messages_from_state(state.messages)
     messages_for_api = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for msg in state.messages:
-        role = getattr(msg, "type", "user")
-        if role == "human":
-            role = "user"
-        elif role == "ai":
-            role = "assistant"
-        content = getattr(msg, "content", str(msg))
-        extra = getattr(msg, "additional_kwargs", {})
 
-        api_msg: dict[str, Any] = {"role": role, "content": content}
-        if extra.get("tool_calls"):
-            api_msg["tool_calls"] = extra["tool_calls"]
-        if role == "tool":
-            api_msg["tool_call_id"] = getattr(msg, "tool_call_id", "")
-        messages_for_api.append(api_msg)
+    if tool_messages:
+        latest_user_message = ""
+        for msg in reversed(state.messages):
+            api_msg = _message_to_api(msg)
+            if api_msg["role"] == "user":
+                latest_user_message = _coerce_text_content(api_msg.get("content"))
+                break
 
-    response = client.chat.completions.create(
-        model=CHAT_MODEL,
-        messages=messages_for_api,
-    )
-    answer = response.choices[0].message.content
+        retrieved_context = "\n\n".join(
+            f"[{tool_msg['name']}]\n{tool_msg['content']}" for tool_msg in tool_messages if tool_msg["content"]
+        )
+        messages_for_api.append(
+            {
+                "role": "user",
+                "content": (
+                    f"用户问题：{latest_user_message or '请基于检索结果回答。'}\n\n"
+                    "以下是 search_notes 的检索结果。请基于这些内容回答，并尽量引用来源文件；"
+                    "如果检索结果不足以回答，就明确说明。\n\n"
+                    f"{retrieved_context}"
+                ),
+            }
+        )
+    else:
+        for msg in state.messages:
+            messages_for_api.append(_message_to_api(msg))
+
+    try:
+        response = client.chat.completions.create(
+            model=CHAT_MODEL,
+            messages=messages_for_api,
+        )
+    except Exception as e:
+        return {"messages": [{"role": "assistant", "content": f"[系统报错] 生成最终回答发生异常: {str(e)}"}]}
+
+    if isinstance(response, str):
+        return {"messages": [{"role": "assistant", "content": f"[API中转报错] 返回了无效对象: {response}"}]}
+
+    choice, error = _extract_choice_message(response)
+    if error:
+        return {"messages": [{"role": "assistant", "content": f"[API返回异常] {error}"}]}
+
+    answer = _coerce_text_content(choice.message.content) or "（模型未返回文本内容）"
     return {"messages": [{"role": "assistant", "content": answer}]}
 
 
@@ -241,6 +411,12 @@ def main():
 
     while True:
         user_text = input("User: ").strip()
+        # Windows 终端编码清洗：忽略无法编码的非法字符（surrogates）
+        try:
+            user_text = user_text.encode("utf-8", errors="replace").decode("utf-8")
+        except Exception:
+            pass
+        
         if user_text.lower() in ("quit", "exit", "q"):
             break
 
